@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 근무 기록기 (Smart)</title>
+    <style>
+        /* 이전 스타일과 동일 (가독성을 위해 중복 생략 가능하나, 전체 복사해서 쓰세요) */
+        :root { --primary: #2c3e50; --accent: #3498db; --bg: #f4f7f6; --cell-border: #e0e0e0; --day-bg: #ffffff; --weekend-sat: #5dade2; --weekend-sun: #e74c3c; }
+        body { font-family: 'Pretendard', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 20px; color: #333; }
+        .container { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 100%; max-width: 550px; }
+        .header { text-align: center; margin-bottom: 25px; border-bottom: 2px solid #eee; padding-bottom: 15px; }
+        .header h1 { margin: 0; color: var(--primary); font-size: 28px; font-weight: 800; }
+        .month-nav { display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 15px; }
+        .month-nav button { background: #fff; border: 1px solid #ddd; padding: 8px 15px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-weight: bold; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 25px; }
+        .day-label { text-align: center; font-weight: 800; font-size: 13px; color: #555; padding: 10px 0; background: #eee; border-radius: 6px; }
+        .day-label:nth-child(1) { color: var(--weekend-sun); }
+        .day-label:nth-child(7) { color: var(--weekend-sat); }
+        .day-cell { background: var(--day-bg); border: 1px solid var(--cell-border); border-radius: 10px; padding: 8px; min-height: 70px; position: relative; }
+        .day-num { font-size: 14px; font-weight: bold; margin-bottom: 8px; }
+        .ot-input { width: 100%; border: none; border-radius: 6px; background-color: #f1f3f5; padding: 6px 0; font-size: 13px; font-weight: bold; text-align: center; outline: none; box-sizing: border-box; }
+        .ot-input.has-value { background-color: var(--accent); color: white; }
+        .salary-box { background: #f8f9fa; padding: 20px; border-radius: 12px; border: 1px solid #eee; }
+        .salary-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .salary-row label { font-size: 15px; font-weight: bold; }
+        .salary-row input { width: 120px; padding: 8px; text-align: right; border: 2px solid #ddd; border-radius: 6px; }
+        .result-box { margin-top: 15px; padding-top: 15px; border-top: 2px dashed #ddd; text-align: right; }
+        .total-text { font-size: 19px; font-weight: 800; }
+        .total-pay-amount { color: var(--accent); font-size: 22px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1><span id="currentYearDisplay">2026</span>년 <span id="currentMonthDisplay">1</span>월</h1>
+        <div class="month-nav">
+            <button onclick="changeMonth(-1)">◀ 이전달</button>
+            <button onclick="todayMonth()">오늘</button> <button onclick="changeMonth(1)">다음달 ▶</button>
+        </div>
+    </div>
+
+    <div class="calendar-grid" id="calendarGrid"></div>
+
+    <div class="salary-box">
+        <div class="salary-row">
+            <label>💰 시간당 수당 (원)</label>
+            <input type="number" id="hourlyRate" value="10000" oninput="calculateSalary()">
+        </div>
+        <div class="salary-row" style="background: #fff; padding: 10px; border-radius: 8px;">
+            <label>⏱ 총 잔업 시간</label>
+            <span><span id="totalHours" style="color:var(--accent); font-size:20px; font-weight:bold;">0</span> 시간</span>
+        </div>
+        <div class="result-box">
+            <div class="total-text">예상 잔업 수당</div>
+            <div class="total-pay-amount"><span id="totalPay">0</span> 원</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 초기 설정: 오늘 날짜 기준으로 시작
+    const today = new Date();
+    let currentYear = today.getFullYear();
+    let currentMonth = today.getMonth(); 
+
+    function getStorageKey() { return `workData_${currentYear}_${currentMonth}`; }
+
+    function initCalendar() {
+        const grid = document.getElementById('calendarGrid');
+        const yearDisplay = document.getElementById('currentYearDisplay');
+        const monthDisplay = document.getElementById('currentMonthDisplay');
+        
+        grid.innerHTML = '';
+        yearDisplay.innerText = currentYear;
+        monthDisplay.innerText = currentMonth + 1;
+
+        const days = ['일', '월', '화', '수', '목', '금', '토'];
+        days.forEach(d => {
+            const div = document.createElement('div');
+            div.className = 'day-label';
+            div.innerText = d;
+            grid.appendChild(div);
+        });
+
+        const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+        const lastDate = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const savedData = JSON.parse(localStorage.getItem(getStorageKey())) || {};
+        const hourlyRate = localStorage.getItem('hourlyRate') || 10000;
+        document.getElementById('hourlyRate').value = hourlyRate;
+
+        for (let i = 0; i < firstDay; i++) {
+            grid.appendChild(document.createElement('div'));
+        }
+
+        for (let d = 1; d <= lastDate; d++) {
+            const cell = document.createElement('div');
+            cell.className = 'day-cell';
+            const otValue = savedData[d] || "";
+            const inputClass = otValue ? "ot-input has-value" : "ot-input";
+            
+            // 오늘 날짜 강조 효과 (선택 사항)
+            const isToday = (today.getFullYear() === currentYear && today.getMonth() === currentMonth && today.getDate() === d);
+            if(isToday) cell.style.borderColor = "var(--accent)";
+            if(isToday) cell.style.background = "#eff8ff";
+
+            cell.innerHTML = `
+                <div class="day-num">${d} ${isToday ? '<span style="font-size:10px; color:var(--accent)">오늘</span>' : ''}</div>
+                <input type="number" class="${inputClass}" placeholder="0" 
+                       value="${otValue}" oninput="saveData(${d}, this.value); updateInputStyle(this);">
+            `;
+            grid.appendChild(cell);
+        }
+        calculateSalary();
+    }
+
+    function todayMonth() {
+        currentYear = today.getFullYear();
+        currentMonth = today.getMonth();
+        initCalendar();
+    }
+
+    function updateInputStyle(input) {
+        if (input.value && input.value > 0) input.classList.add('has-value');
+        else input.classList.remove('has-value');
+    }
+
+    function saveData(day, value) {
+        let data = JSON.parse(localStorage.getItem(getStorageKey())) || {};
+        data[day] = value;
+        localStorage.setItem(getStorageKey(), JSON.stringify(data));
+        calculateSalary();
+    }
+
+    function calculateSalary() {
+        const rate = document.getElementById('hourlyRate').value;
+        localStorage.setItem('hourlyRate', rate);
+        const data = JSON.parse(localStorage.getItem(getStorageKey())) || {};
+        let total = 0;
+        Object.values(data).forEach(val => { if(val) total += parseFloat(val); });
+        document.getElementById('totalHours').innerText = total.toFixed(1).replace(/\.0$/, '');
+        document.getElementById('totalPay').innerText = Math.round(total * rate).toLocaleString();
+    }
+
+    function changeMonth(diff) {
+        currentMonth += diff;
+        if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+        else if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+        initCalendar();
+    }
+
+    initCalendar();
+</script>
+
+</body>
+</html>
